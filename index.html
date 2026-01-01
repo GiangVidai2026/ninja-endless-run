@@ -515,6 +515,7 @@
             persist();
             audio && audio.sfx.buy();
             renderShop();
+            updateHUD();
           } else {
             audio && audio.sfx.fail();
           }
@@ -1395,7 +1396,6 @@
     else if(type==="dart"){ o.w=62; o.h=14; o.y=gy - rInt(70, 130); }
     else if(type==="arrowFwd"){ o.w=72; o.h=16; o.y=gy - rInt(80, 150); }
     else if(type==="woodBlock"){
-      // a bit easier: place mid-low and wider
       o.w = rInt(70, 110);
       o.h = rInt(54, 74);
       o.y = gy - o.h;
@@ -1544,7 +1544,6 @@
     ctx.beginPath(); ctx.arc(cx,cy,55,0,Math.PI*2); ctx.fill();
     ctx.globalCompositeOperation="source-over";
 
-    // smoke orb
     ctx.fillStyle="rgba(12,16,26,0.70)";
     ctx.strokeStyle="rgba(125,255,160,0.38)";
     ctx.lineWidth=2;
@@ -1729,7 +1728,6 @@
     }
     ctx.globalAlpha=1;
 
-    // crack overlay as hp decreases
     ctx.save();
     ctx.globalAlpha = (1-a) * 0.85;
     ctx.strokeStyle = "rgba(0,0,0,0.45)";
@@ -1741,7 +1739,6 @@
     ctx.stroke();
     ctx.restore();
 
-    // small hp bar
     ctx.globalAlpha = 0.85;
     ctx.fillStyle="rgba(0,0,0,0.25)";
     roundRect(o.x+10, o.y+10, o.w-20, 8, 6, true, false);
@@ -1949,6 +1946,24 @@
   // =========================================================
   // GAME FLOW
   // =========================================================
+  function updateHUD(){
+    uiBest.textContent = String(G.best);
+    uiWallet.textContent = String(save.wallet);
+  }
+
+  function updateMenuUI(forceOverlayText=false){
+    G.best = save.best || 0;
+    uiBest.textContent = String(G.best);
+    uiWallet.textContent = String(save.wallet);
+    if(forceOverlayText){
+      ovWallet.textContent = String(save.wallet);
+      ovSkin.textContent = skinById(save.equipped).name;
+      selTrack.value = save.track;
+    }
+    renderShop();
+    updateSoundButtons();
+  }
+
   function showMenu(){
     G.state = STATE.MENU;
     uiStatus.textContent = "MENU";
@@ -1960,8 +1975,7 @@
     btnStart.textContent = "Start";
     selTrack.value = save.track;
 
-    renderShop();
-    updateSoundButtons();
+    updateMenuUI(true);
   }
 
   function resetRun(){
@@ -2051,7 +2065,7 @@
       `Nhấn <b>Start</b> để chơi lại, hoặc phím <b>R</b>.`;
 
     btnStart.textContent = "Play Again";
-    renderShop();
+    updateMenuUI(true);
     audio && audio.sfx.lose();
   }
 
@@ -2188,21 +2202,50 @@
     return "Va chạm chướng ngại vật";
   }
 
+  function collidePlayerWithObstacle(o, pr){
+    const or = {x:o.x, y:o.y, w:o.w, h:o.h};
+    if(!aabb(pr, or)) return false;
+
+    // Invuln: ignore damage, but remove/destroy some obstacles for feedback
+    if(Player.invulnT > 0){
+      setShake(4);
+      spawnParticles(or.x+or.w/2, or.y+or.h/2, "hit", 8);
+      // remove projectile-ish things, keep solid ones but push them away
+      if(o.type==="dart" || o.type==="arrowFwd" || o.type==="shuriken"){
+        return "remove";
+      }
+      // woodblock: also break
+      if(o.type==="woodBlock"){
+        spawnWoodSplinters(or.x+or.w/2, or.y+or.h/2, 10);
+        return "remove";
+      }
+      // spike/saw/gate: do not remove, just pass
+      return "invuln";
+    }
+
+    die(reasonForObstacle(o));
+    return true;
+  }
+
   // =========================================================
   // UPDATE + DRAW LOOP
   // =========================================================
   let last = 0;
   let dtLast = 0;
 
-  function update(dt){
-    dtLast = dt;
-    G.t += dt;
-
+  function updateHUDRuntime(){
     uiScore.textContent = String(Math.floor(G.score));
     uiSpeed.textContent = String(Math.floor(G.speed));
     uiRunCoins.textContent = String(G.runCoins);
     uiWallet.textContent = String(save.wallet);
     uiInv.textContent = `${Math.max(0, Player.invulnT).toFixed(1)}s`;
+  }
+
+  function update(dt){
+    dtLast = dt;
+    G.t += dt;
+
+    updateHUDRuntime();
 
     if(G.state === STATE.MENU || G.state === STATE.OVER) return;
     if(G.state === STATE.PAUSE) return;
@@ -2306,225 +2349,175 @@
     for(let i=pickups.length-1;i>=0;i--){
       const p = pickups[i];
       p.x -= G.speed * dt;
+      p.spin += dt*2.5;
       if(p.x < -80) pickups.splice(i,1);
     }
 
-    // Rain arrows
+    // Arrow rain physics
     for(let i=arrows.length-1;i>=0;i--){
       const a = arrows[i];
       a.warn = Math.max(0, a.warn - dt);
       a.y += a.vy * dt;
-      if(a.y > CFG.baseH + 60) arrows.splice(i,1);
+      if(a.y > CFG.baseH + 60){
+        arrows.splice(i,1);
+      }
     }
 
-    // Particles
+    // Particles physics
     for(let i=particles.length-1;i>=0;i--){
       const p = particles[i];
       p.t += dt;
       p.life -= dt;
-      p.x += p.vx*dt;
-      p.y += p.vy*dt;
-      p.vy += 900*dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += 520 * dt;
+      p.vx *= (1 - dt*0.8);
       if(p.life <= 0) particles.splice(i,1);
     }
 
-    // Dust
-    if(Player.onGround && (Math.floor(G.t*22)%2===0)){
-      particles.push({x:Player.x-10,y:CFG.groundY-6,vx:-40-rnd()*120,vy:-20-rnd()*80,t:0,life:0.25+rnd()*0.18,kind:"dust"});
+    // Screen shake decay
+    if(G.shake > 0){
+      G.shake = Math.max(0, G.shake - CFG.shakeDecay*dt);
+      const s = G.shake;
+      G.shakeX = (rnd()*2-1) * s;
+      G.shakeY = (rnd()*2-1) * s * 0.6;
+    }else{
+      G.shakeX = 0; G.shakeY = 0;
     }
 
     // Collisions
     const pr = playerRect();
 
-    // coins collect
+    // 1) coins
     for(let i=coins.length-1;i>=0;i--){
       const c = coins[i];
-      const cr = {x:c.x-c.r, y:c.y-c.r, w:c.r*2, h:c.r*2};
-      if(aabb(pr,cr)){
+      const cr = {x:c.x - c.r, y:c.y - c.r, w:c.r*2, h:c.r*2};
+      if(aabb(pr, cr)){
         coins.splice(i,1);
-        G.runCoins += 1;
         save.wallet += 1;
+        G.runCoins += 1;
         persist();
-
-        spawnParticles(cr.x+cr.w/2, cr.y+cr.h/2, "coin", 8);
         audio && audio.sfx.coin();
-
-        Chaser.gap = clamp(Chaser.gap + CFG.coinChaserPush, 70, CFG.chaserGapMax);
+        spawnParticles(c.x, c.y, "coin", 8);
+        Chaser.gap = clamp(Chaser.gap + CFG.coinChaserPush, 80, CFG.chaserGapMax);
       }
     }
 
-    // ✅ smoke pickup collect => invuln
+    // 2) pickups (smoke)
     for(let i=pickups.length-1;i>=0;i--){
       const p = pickups[i];
-      if(p.type!=="smoke") continue;
-      const prc = {x:p.x-p.r, y:p.y-p.r, w:p.r*2, h:p.r*2};
-      if(aabb(pr, prc)){
+      const rr = {x:p.x - p.r, y:p.y - p.r, w:p.r*2, h:p.r*2};
+      if(aabb(pr, rr)){
         pickups.splice(i,1);
         Player.invulnT = Math.max(Player.invulnT, CFG.smokeInvSeconds);
-        spawnParticles(prc.x+prc.w/2, prc.y+prc.h/2, "smoke", 14);
         audio && audio.sfx.power();
+        spawnParticles(p.x, p.y, "smoke", 14);
+        setShake(6);
       }
     }
 
-    // obstacles hit (✅ invuln ignores)
-    for(let i=0;i<obstacles.length;i++){
-      const o = obstacles[i];
-      const or = {x:o.x, y:o.y, w:o.w, h:o.h};
-      if(aabb(pr, or)){
-        if(Player.invulnT > 0){
-          // during invuln, just bounce + particles, remove light obstacles
-          setShake(4);
-          spawnParticles(pr.x+pr.w/2, pr.y+pr.h/2, "smoke", 8);
-          if(o.type==="dart" || o.type==="arrowFwd" || o.type==="shuriken") obstacles.splice(i,1);
-          break;
-        }
-        setShake(CFG.shakeHit);
-        if(o.type==="woodBlock") spawnWoodSplinters(or.x+or.w/2, or.y+or.h/2, 18);
-        else spawnParticles(pr.x+pr.w/2, pr.y+pr.h/2, "hit", 12);
-        die(reasonForObstacle(o));
-        return;
-      }
-    }
-
-    // rain arrow hit (✅ invuln ignores)
-    for(let i=0;i<arrows.length;i++){
+    // 3) rain arrows collision
+    for(let i=arrows.length-1;i>=0;i--){
       const a = arrows[i];
       if(a.warn > 0) continue;
-      const ar = {x:a.x-5, y:a.y-18, w:10, h:30};
+      const ar = {x:a.x - a.w/2, y:a.y - a.h/2, w:a.w, h:a.h};
       if(aabb(pr, ar)){
         if(Player.invulnT > 0){
-          setShake(3);
-          spawnParticles(ar.x+5, ar.y+10, "smoke", 6);
           arrows.splice(i,1);
-          break;
+          spawnParticles(a.x, a.y, "hit", 10);
+          setShake(5);
+        }else{
+          die("Trúng mưa tên (Arrow Rain)");
+          return;
         }
-        setShake(CFG.shakeHit);
-        spawnParticles(pr.x+pr.w/2, pr.y+pr.h/2, "hit", 12);
-        die("Trúng mưa tên (Arrow Rain)!");
-        return;
+      }
+      // if it hits ground, remove
+      if(a.y >= CFG.groundY + 30){
+        arrows.splice(i,1);
       }
     }
 
-    // Screen shake
-    if(G.shake > 0){
-      G.shake = Math.max(0, G.shake - CFG.shakeDecay * dt);
-      const s = G.shake;
-      G.shakeX = (rnd()*2-1) * s;
-      G.shakeY = (rnd()*2-1) * s * 0.6;
-    } else {
-      G.shakeX = 0; G.shakeY = 0;
+    // 4) obstacles collision
+    for(let i=obstacles.length-1;i>=0;i--){
+      const o = obstacles[i];
+      const result = collidePlayerWithObstacle(o, pr);
+      if(result === true){
+        return;
+      }
+      if(result === "remove"){
+        obstacles.splice(i,1);
+      }
+    }
+
+    // Dust while running
+    if(Player.onGround && G.state===STATE.PLAY && Math.floor(G.t*30)%2===0){
+      particles.push({x:Player.x-10,y:CFG.groundY-6,vx:-120-rnd()*80,vy:-20-rnd()*40,t:0,life:0.35+rnd()*0.18,kind:"dust"});
     }
   }
 
   function draw(){
+    // Base clear
+    ctx.save();
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,CFG.baseW,CFG.baseH);
+    ctx.restore();
+
+    // Shake transform
     ctx.save();
     ctx.translate(G.shakeX, G.shakeY);
 
     drawBackground(dtLast);
 
+    // arrows behind player
+    if(G.arrowRainT > 0 || arrows.length){
+      drawRainArrows();
+    }
+
+    // coins + pickups
     for(const c of coins) drawCoin(c);
     for(const p of pickups) drawPickup(p);
+
+    // obstacles
     for(const o of obstacles) drawObstacle(o);
-    drawRainArrows();
-    drawWoodSaw();
 
-    if(G.state === STATE.PLAY || G.state === STATE.WOOD) drawChaser();
-    if(G.state !== STATE.MENU) drawPlayer();
+    // player + chaser
+    drawPlayer();
+    if(G.state===STATE.PLAY) drawChaser();
 
+    // particles front
     drawParticles();
 
-    // ✅ when OVER: cover full screen black
-    if(G.state === STATE.OVER){
-      ctx.save();
-      ctx.fillStyle="rgba(0,0,0,0.92)";
-      ctx.fillRect(0,0,CFG.baseW,CFG.baseH);
-      ctx.restore();
-    }
+    // wood event overlay
+    if(G.state===STATE.WOOD) drawWoodSaw();
 
     ctx.restore();
   }
 
-  function loop(ts){
-    const t = ts/1000;
-    const dt = Math.min(0.033, (t - last) || 0);
+  function frame(ts){
+    const t = ts || 0;
+    const dt = clamp((t - last) / 1000, 0, 0.033);
     last = t;
+
     update(dt);
     draw();
-    requestAnimationFrame(loop);
-  }
 
-  // =========================================================
-  // MENU UI
-  // =========================================================
-  function updateMenuUI(force=false){
-    uiBest.textContent = String(save.best || 0);
-    uiWallet.textContent = String(save.wallet || 0);
-    ovWallet.textContent = String(save.wallet || 0);
-    ovSkin.textContent = skinById(save.equipped).name;
-    selTrack.value = save.track;
-    renderShop();
-    updateSoundButtons();
+    requestAnimationFrame(frame);
   }
 
   // =========================================================
   // INIT
   // =========================================================
-  persist();
+  // ensure best shows correctly
+  G.best = save.best || 0;
   uiBest.textContent = String(G.best);
-  updateMenuUI(true);
+  uiWallet.textContent = String(save.wallet);
+  updateSoundButtons();
+  selTrack.value = save.track;
+
   showMenu();
-  requestAnimationFrame(loop);
+  requestAnimationFrame(frame);
 
 })();
-/* =========================================================
-   AUTO OVERRIDE: Dart projectile -> Arrow visual
-   (GIỮ NGUYÊN logic, collision, spawn)
-========================================================= */
-
-drawDart = function(o){
-  // viền phát sáng
-  glowOutline(o.x,o.y,o.w,o.h,"rgba(255,140,90,0.65)",0.16);
-
-  const cx = o.x + o.w/2;
-  const cy = o.y + o.h/2;
-
-  ctx.save();
-  ctx.translate(cx, cy);
-
-  /* === thân mũi tên === */
-  ctx.fillStyle = "#2A1A0E";
-  ctx.strokeStyle = "rgba(255,200,150,0.35)";
-  ctx.lineWidth = 2;
-  roundRect(-30, -3, 42, 6, 3, true, true);
-
-  /* === đầu mũi tên === */
-  ctx.fillStyle = "rgba(255,120,80,0.95)";
-  ctx.beginPath();
-  ctx.moveTo(12, -9);
-  ctx.lineTo(32, 0);
-  ctx.lineTo(12, 9);
-  ctx.closePath();
-  ctx.fill();
-
-  /* === đuôi lông === */
-  ctx.fillStyle = "rgba(255,220,180,0.55)";
-  ctx.beginPath();
-  ctx.moveTo(-30, -6);
-  ctx.lineTo(-44, -2);
-  ctx.lineTo(-30, 2);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.moveTo(-30, 6);
-  ctx.lineTo(-44, 2);
-  ctx.lineTo(-30, -2);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.restore();
-};
-
 </script>
 </body>
 </html>
