@@ -1,6 +1,10 @@
 <!doctype html>
 <html lang="vi">
 <head>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <title>Ninja Endless Runner (Single File - Rebuild v4)</title>
@@ -239,6 +243,57 @@
 #rotateHint h2{ margin:0 0 8px 0; font-size:20px; }
 #rotateHint p{ margin:0; color: rgba(242,246,255,.78); line-height:1.45; font-weight:700; }
 #rotateHint .hint{ margin-top:12px; font-size:14px; color: rgba(242,246,255,.70); }
+    html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+}
+
+/* Bạn có thể đổi selector #game-root nếu container game bạn tên khác */
+#game-root, .game-root, #game, .game, canvas {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  touch-action: none; /* giảm delay & tránh cử chỉ gây lag */
+}
+
+/* Lớp wrapper để xoay ngang khi máy đang dọc */
+.mobile-landscape-lock {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: #000;
+}
+
+/* Khi đang portrait: xoay wrapper 90deg để "ép" landscape */
+.mobile-landscape-lock.is-portrait {
+  transform: rotate(90deg);
+  transform-origin: center center;
+  width: 100vh;   /* hoán đổi */
+  height: 100vw;
+  left: calc((100vw - 100vh) / 2);
+  top: calc((100vh - 100vw) / 2);
+}
+
+/* Canvas luôn fit wrapper */
+.mobile-landscape-lock canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Nút điều khiển: chống double tap / zoom / delay */
+button, .btn, .control-btn {
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
   </style>
 </head>
 
@@ -2760,6 +2815,146 @@ function startGameLoop(update, render){
 
   requestAnimationFrame(frame);
 }
+(() => {
+  // ===== Helpers =====
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+  // Tìm canvas "hợp lý" nhất: ưu tiên #gameCanvas, nếu không có thì lấy canvas đầu tiên
+  function findCanvas() {
+    return $('#gameCanvas') || $('canvas');
+  }
+
+  // Tạo wrapper để xoay ngang (không đụng code gốc)
+  function ensureWrapper(canvas) {
+    if (!canvas) return null;
+
+    // Nếu canvas đã nằm trong wrapper rồi thì dùng lại
+    let wrapper = canvas.closest('.mobile-landscape-lock');
+    if (wrapper) return wrapper;
+
+    wrapper = document.createElement('div');
+    wrapper.className = 'mobile-landscape-lock';
+
+    const parent = canvas.parentNode;
+    parent.insertBefore(wrapper, canvas);
+    wrapper.appendChild(canvas);
+
+    return wrapper;
+  }
+
+  // Giảm lag: cap DPR (độ phân giải render) để mobile đỡ nặng
+  function setCanvasResolution(canvas, wrapper) {
+    if (!canvas || !wrapper) return;
+
+    const rect = wrapper.getBoundingClientRect();
+
+    // DPR cao làm lag (đặc biệt máy Android). Cap 1.25–1.5 tuỳ game.
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.25);
+
+    const targetW = Math.max(1, Math.floor(rect.width * dpr));
+    const targetH = Math.max(1, Math.floor(rect.height * dpr));
+
+    // Chỉ resize khi khác thật sự (tránh resize liên tục gây giật)
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW;
+      canvas.height = targetH;
+    }
+  }
+
+  // Ép hiển thị landscape: nếu màn hình đang dọc => xoay wrapper
+  function applyLandscapeLock(wrapper) {
+    if (!wrapper) return;
+
+    const isPortrait = window.matchMedia("(orientation: portrait)").matches;
+    wrapper.classList.toggle('is-portrait', isPortrait);
+  }
+
+  // Debounce resize/orientation (tránh spam -> lag)
+  function debounce(fn, wait = 150) {
+    let t;
+    return (...args) => {
+      clearTimeout(t);
+      t = setTimeout(() => fn(...args), wait);
+    };
+  }
+
+  // Xoá nút Attack bị trùng (giữ lại 1 nút)
+  // Heuristic: tìm button có chữ "Attack" (hoặc "X Attack") và xoá bớt.
+  function removeDuplicateAttackButtons() {
+    const candidates = $$('button, .btn, .control-btn').filter(el => {
+      const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
+      return txt === 'attack' || txt === 'x attack' || txt.includes('attack');
+    });
+
+    if (candidates.length <= 1) return;
+
+    // Giữ nút "đang hiển thị" đầu tiên, xoá các nút còn lại
+    const visible = candidates.filter(el => el.offsetParent !== null);
+    const keep = (visible[0] || candidates[0]);
+
+    candidates.forEach(el => {
+      if (el !== keep) el.remove();
+    });
+  }
+
+  // Chống double-trigger (touch + click) gây ra cảm giác "2 lần bấm" và lag
+  // Nếu game bạn bắt sự kiện bằng click, đoạn này giúp giảm bấm đúp.
+  function preventGhostClicks() {
+    let lastTouchTime = 0;
+
+    document.addEventListener('touchstart', () => {
+      lastTouchTime = Date.now();
+    }, { passive: true });
+
+    document.addEventListener('click', (e) => {
+      // Nếu vừa touch trong 500ms mà click tới => bỏ qua click “ma”
+      if (Date.now() - lastTouchTime < 500) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    }, true);
+  }
+
+  // ===== Init Patch =====
+  function init() {
+    const canvas = findCanvas();
+    if (!canvas) return;
+
+    const wrapper = ensureWrapper(canvas);
+
+    const refresh = () => {
+      applyLandscapeLock(wrapper);
+      setCanvasResolution(canvas, wrapper);
+      removeDuplicateAttackButtons();
+    };
+
+    const refreshDebounced = debounce(refresh, 150);
+
+    // Lần đầu
+    refresh();
+
+    // Theo dõi thay đổi
+    window.addEventListener('resize', refreshDebounced, { passive: true });
+    window.addEventListener('orientationchange', refreshDebounced, { passive: true });
+
+    // Giảm ghost click
+    preventGhostClicks();
+
+    // Nếu game có context 2D: tắt smoothing để nhẹ hơn (tuỳ style)
+    try {
+      const ctx = canvas.getContext('2d');
+      if (ctx) ctx.imageSmoothingEnabled = false;
+    } catch (_) {}
+  }
+
+  // Chạy sau khi DOM sẵn sàng
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
 
 </script>
 
@@ -2773,5 +2968,6 @@ function startGameLoop(update, render){
 
 </body>
 </html>
+
 
 
