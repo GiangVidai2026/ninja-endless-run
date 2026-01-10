@@ -179,6 +179,43 @@
     }
 
     .overlay.over{background: rgba(0,0,0,.92)}
+    /* === MOBILE: force landscape prompt === */
+#rotateHint{
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  background: rgba(0,0,0,.92);
+  padding: 18px;
+  text-align: center;
+}
+#rotateHint .box{
+  width: min(520px, 92vw);
+  background: rgba(12,16,26,.82);
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 18px;
+  padding: 18px 16px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 30px 100px rgba(0,0,0,.60);
+}
+#rotateHint h2{
+  margin: 0 0 8px 0;
+  font-size: 20px;
+}
+#rotateHint p{
+  margin: 0;
+  color: rgba(242,246,255,.78);
+  line-height: 1.45;
+  font-weight: 700;
+}
+#rotateHint .hint{
+  margin-top: 12px;
+  font-size: 14px;
+  color: rgba(242,246,255,.70);
+}
+
   </style>
 </head>
 
@@ -2516,8 +2553,69 @@
 
   showMenu();
   requestAnimationFrame(frame);
+  <script>
+(function(){
+  const hint = document.getElementById("rotateHint");
+  const isMobile = matchMedia("(pointer:coarse)").matches;
+
+  function isPortrait(){
+    // matchMedia orientation works well on mobile
+    return matchMedia("(orientation: portrait)").matches;
+  }
+
+  function updateHint(){
+    if(!isMobile) { hint.style.display = "none"; return; }
+    hint.style.display = isPortrait() ? "flex" : "none";
+  }
+
+  async function tryFullscreenAndLockLandscape(){
+    // Must be called in a user gesture (click/tap)
+    try{
+      // Fullscreen first increases chance orientation lock works (esp. Android/Chrome)
+      const el = document.documentElement;
+      if(!document.fullscreenElement && el.requestFullscreen){
+        await el.requestFullscreen();
+      }
+    }catch(e){ /* ignore */ }
+
+    try{
+      // Orientation lock is not supported everywhere (iOS Safari often blocks)
+      if(screen.orientation && screen.orientation.lock){
+        await screen.orientation.lock("landscape");
+      }
+    }catch(e){ /* ignore */ }
+
+    // re-check UI hint
+    updateHint();
+  }
+
+  // Update hint on rotate/resize
+  window.addEventListener("resize", updateHint, {passive:true});
+  window.addEventListener("orientationchange", updateHint, {passive:true});
+  updateHint();
+
+  // When user presses Start / Play Again / Fullscreen => try to lock landscape
+  const btnStart = document.getElementById("btnStart");
+  const btnFullscreen = document.getElementById("btnFullscreen");
+
+  if(btnStart) btnStart.addEventListener("click", tryFullscreenAndLockLandscape);
+  if(btnFullscreen) btnFullscreen.addEventListener("click", tryFullscreenAndLockLandscape);
+})();
+</script>
+
 
 })();
 </script>
+  <!-- Mobile rotate hint -->
+<div id="rotateHint">
+  <div class="box">
+    <h2>📱 Xoay ngang để chơi</h2>
+    <p>Game được tối ưu cho <b>màn hình ngang (Landscape)</b> trên điện thoại.<br/>
+       Hãy xoay máy ngang để bắt đầu / tiếp tục.</p>
+    <div class="hint">Nếu bạn đã xoay ngang mà vẫn bị, hãy bật <b>Auto-rotate</b> trên điện thoại.</div>
+  </div>
+</div>
+
 </body>
 </html>
+
