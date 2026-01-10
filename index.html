@@ -215,7 +215,30 @@
   font-size: 14px;
   color: rgba(242,246,255,.70);
 }
-
+    /* ==== Landscape only for mobile ==== */
+#rotateHint{
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  background: rgba(0,0,0,.92);
+  padding: 18px;
+  text-align: center;
+}
+#rotateHint .box{
+  width: min(520px, 92vw);
+  background: rgba(12,16,26,.82);
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 18px;
+  padding: 18px 16px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 30px 100px rgba(0,0,0,.60);
+}
+#rotateHint h2{ margin:0 0 8px 0; font-size:20px; }
+#rotateHint p{ margin:0; color: rgba(242,246,255,.78); line-height:1.45; font-weight:700; }
+#rotateHint .hint{ margin-top:12px; font-size:14px; color: rgba(242,246,255,.70); }
   </style>
 </head>
 
@@ -2606,16 +2629,149 @@
 
 })();
 </script>
-  <!-- Mobile rotate hint -->
+  <script>
+(function(){
+  const hint = document.getElementById("rotateHint");
+  const isMobile = matchMedia("(pointer:coarse)").matches;
+
+  // === Bạn chỉ cần “nối” 2 hàm này vào game của bạn (nếu có) ===
+  // Nếu game bạn có sẵn pause/resume: gán lại window.__GAME_PAUSE / __GAME_RESUME
+  if (!window.__GAME_PAUSE)  window.__GAME_PAUSE  = function(){ window.__GAME_PAUSED = true; };
+  if (!window.__GAME_RESUME) window.__GAME_RESUME = function(){ window.__GAME_PAUSED = false; };
+
+  function isPortrait(){
+    return matchMedia("(orientation: portrait)").matches;
+  }
+
+  function updateOrientationUI(){
+    if(!isMobile){ hint.style.display = "none"; return; }
+
+    if(isPortrait()){
+      hint.style.display = "flex";
+      window.__GAME_PAUSE();
+    }else{
+      hint.style.display = "none";
+      window.__GAME_RESUME();
+    }
+  }
+
+  async function tryLockLandscape(){
+    if(!isMobile) return;
+
+    // fullscreen increases lock success (mostly Android Chrome)
+    try{
+      const el = document.documentElement;
+      if(!document.fullscreenElement && el.requestFullscreen){
+        await el.requestFullscreen();
+      }
+    }catch(e){}
+
+    // lock landscape (not always available on iOS Safari)
+    try{
+      if(screen.orientation && screen.orientation.lock){
+        await screen.orientation.lock("landscape");
+      }
+    }catch(e){}
+
+    updateOrientationUI();
+  }
+
+  // Run on load + on rotate
+  window.addEventListener("resize", updateOrientationUI, {passive:true});
+  window.addEventListener("orientationchange", updateOrientationUI, {passive:true});
+  updateOrientationUI();
+
+  // Call lock when user taps Start/Play/Fullscreen if your buttons exist
+  const btnStart = document.getElementById("btnStart");
+  const btnPlay  = document.getElementById("btnPlay");
+  const btnFs    = document.getElementById("btnFullscreen");
+
+  [btnStart, btnPlay, btnFs].forEach(btn=>{
+    if(btn) btn.addEventListener("click", tryLockLandscape);
+  });
+
+  // Also: allow tap on overlay to attempt lock
+  hint.addEventListener("click", tryLockLandscape);
+})();
+    function setupCanvas(canvas){
+  const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
+  // alpha:false giảm blend; desynchronized giúp giảm độ trễ render (không phải máy nào cũng hỗ trợ)
+
+  // Tắt smoothing nếu game pixel-art / muốn nét & nhẹ hơn
+  ctx.imageSmoothingEnabled = false;
+
+  // Cap DPR để giảm lag trên mobile (cực hiệu quả)
+  function resizeCanvas(){
+    const isMobile = matchMedia("(pointer:coarse)").matches;
+    const dprRaw = window.devicePixelRatio || 1;
+
+    // Mobile: cap 1.25–1.5 tùy game (1.25 nhẹ hơn). Desktop giữ nguyên.
+    const dpr = isMobile ? Math.min(dprRaw, 1.25) : dprRaw;
+
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.max(1, Math.floor(rect.width  * dpr));
+    const h = Math.max(1, Math.floor(rect.height * dpr));
+
+    if(canvas.width !== w || canvas.height !== h){
+      canvas.width = w;
+      canvas.height = h;
+    }
+
+    // scale vẽ theo CSS pixels
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  // Resize chỉ khi cần (đừng resize mỗi frame)
+  window.addEventListener("resize", resizeCanvas, {passive:true});
+  window.addEventListener("orientationchange", resizeCanvas, {passive:true});
+  resizeCanvas();
+
+  return { ctx, resizeCanvas };
+}
+function startGameLoop(update, render){
+  let last = performance.now();
+  let acc = 0;
+  const step = 1000 / 60; // 60 updates/s
+
+  function frame(now){
+    if(window.__GAME_PAUSED){
+      last = now;
+      requestAnimationFrame(frame);
+      return;
+    }
+
+    let dt = now - last;
+    last = now;
+
+    // Chặn dt quá lớn khi tab lag/đổi app (tránh physics “nổ”)
+    if(dt > 100) dt = 100;
+
+    acc += dt;
+
+    // fixed update
+    while(acc >= step){
+      update(step / 1000); // seconds
+      acc -= step;
+    }
+
+    render();
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+}
+
+</script>
+
 <div id="rotateHint">
   <div class="box">
     <h2>📱 Xoay ngang để chơi</h2>
-    <p>Game được tối ưu cho <b>màn hình ngang (Landscape)</b> trên điện thoại.<br/>
-       Hãy xoay máy ngang để bắt đầu / tiếp tục.</p>
-    <div class="hint">Nếu bạn đã xoay ngang mà vẫn bị, hãy bật <b>Auto-rotate</b> trên điện thoại.</div>
+    <p>Game được tối ưu cho <b>màn hình ngang (Landscape)</b>.<br/>Hãy xoay máy ngang để tiếp tục.</p>
+    <div class="hint">Bật <b>Auto-rotate</b> nếu cần.</div>
   </div>
 </div>
 
 </body>
 </html>
+
 
