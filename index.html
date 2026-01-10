@@ -1,10 +1,6 @@
 <!doctype html>
 <html lang="vi">
 <head>
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="mobile-web-app-capable" content="yes">
-
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <title>Ninja Endless Runner (Single File - Rebuild v4)</title>
@@ -293,6 +289,48 @@ button, .btn, .control-btn {
   user-select: none;
   -webkit-user-select: none;
 }
+    #gameShell{
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #000;
+  touch-action: none;
+}
+
+/* Stage là thứ mình xoay */
+#gameStage{
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  transform-origin: center center;
+}
+
+/* Khi bật “xoay giao diện” */
+#gameShell.rotated #gameStage{
+  /* Xoay 90 độ quanh tâm */
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+
+/* Nút xoay */
+.rotate-btn{
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 9999;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.25);
+  background: rgba(0,0,0,.55);
+  color: #fff;
+  font-weight: 600;
+  backdrop-filter: blur(8px);
+}
+
+@media (min-width: 900px){
+  .rotate-btn{ display:none; } /* desktop thì giấu */
+}
+
 
   </style>
 </head>
@@ -381,6 +419,16 @@ button, .btn, .control-btn {
       </div>
     </div>
   </div>
+  <div id="gameShell">
+  <div id="gameStage">
+    <canvas id="game"></canvas>
+    <!-- các nút UI khác của bạn nếu có -->
+  </div>
+
+  <button id="btnRotate" class="rotate-btn" type="button" aria-label="Xoay giao diện">
+    ⟳ Xoay
+  </button>
+</div>
 
 <script>
 (() => {
@@ -2955,6 +3003,70 @@ function startGameLoop(update, render){
     init();
   }
 })();
+    (() => {
+  const shell = document.getElementById('gameShell');
+  const stage = document.getElementById('gameStage');
+  const canvas = document.getElementById('game');
+  const btn = document.getElementById('btnRotate');
+
+  // Bạn chọn “độ phân giải logic” của game (tùy game của bạn)
+  const BASE_W = 1280;
+  const BASE_H = 720;
+
+  function isMobile() {
+    return matchMedia("(pointer: coarse)").matches;
+  }
+
+  function resize() {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    const rotated = shell.classList.contains('rotated');
+
+    // Nếu rotated: coi như “khung hiển thị” đang dùng vh x vw
+    const viewW = rotated ? vh : vw;
+    const viewH = rotated ? vw : vh;
+
+    // scale để fit vào viewW/viewH theo tỉ lệ BASE_W/BASE_H
+    const scale = Math.min(viewW / BASE_W, viewH / BASE_H);
+
+    const stageW = Math.round(BASE_W * scale);
+    const stageH = Math.round(BASE_H * scale);
+
+    stage.style.width = stageW + 'px';
+    stage.style.height = stageH + 'px';
+
+    // Canvas pixel ratio (cho nét)
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    canvas.style.width = stageW + 'px';
+    canvas.style.height = stageH + 'px';
+
+    canvas.width  = Math.round(stageW * dpr);
+    canvas.height = Math.round(stageH * dpr);
+
+    // Nếu game của bạn vẽ theo “tọa độ logic” BASE_W x BASE_H,
+    // bạn có thể scale context:
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.setTransform((stageW * dpr) / BASE_W, 0, 0, (stageH * dpr) / BASE_H, 0, 0);
+    }
+  }
+
+  btn.addEventListener('click', () => {
+    shell.classList.toggle('rotated');
+    resize();
+  });
+
+  window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', resize);
+
+  // Auto: chỉ hiện nút & resize trên mobile
+  if (isMobile()) {
+    resize();
+  }
+})();
+
 
 </script>
 
@@ -2968,6 +3080,7 @@ function startGameLoop(update, render){
 
 </body>
 </html>
+
 
 
 
