@@ -3,6 +3,35 @@
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <style>
+    /* ===== LOBBY WRAPPER (bạn đổi id theo bạn) ===== */
+#lobbyWrap{
+  transform-origin: top center;
+  will-change: transform;
+}
+
+/* Khi vào game thì ẩn lobby, hiện game (tùy bạn đang làm) */
+body.in-game #lobby{ display:none; }
+body.in-game #game{ display:block; }
+
+/* Gợi ý: mặc định */
+#game{ display:none; }
+
+/* Overlay nhắc xoay máy (fallback) */
+#rotateHint{
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+  z-index: 99999;
+  background: rgba(0,0,0,.85);
+  color: #fff;
+  font-size: 18px;
+}
+body.show-rotate-hint #rotateHint{ display:flex; }
+
   html, body { margin:0; overflow-y:auto; overflow-x:hidden; }
   #scrollHandle{
     position: fixed;
@@ -30,6 +59,18 @@
 
 <style>
   html, body { height: 100%; margin: 0; background: #111; overflow: hidden; }
+  html, body{
+  height: auto !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch; /* iOS */
+}
+
+/* Nếu bạn đang có canvas full-screen và muốn kéo ngay trên canvas cũng cuộn được */
+canvas{
+  touch-action: pan-y; /* cho phép vuốt dọc để cuộn */
+}
+
 
   /* Canvas full màn hình */
   #game { display:block; width:100vw; height:100vh; touch-action:none; }
@@ -3276,6 +3317,85 @@ function startGameLoop(update, render){
   window.addEventListener('touchmove', onMove, { passive:false });
   window.addEventListener('touchend', onUp);
 })();
+  // ====== 1) THU NHỎ LOBBY CHO ĐIỆN THOẠI NHỎ ======
+const DESIGN_LOBBY_WIDTH = 420;  // bạn có thể chỉnh (rộng thiết kế lobby của bạn)
+let inGame = false;
+
+function applyLobbyScale(){
+  const wrap = document.getElementById('lobbyWrap');
+  if (!wrap) return;
+
+  // Nếu đang trong game thì bỏ scale luôn
+  if (inGame) {
+    wrap.style.transform = '';
+    wrap.style.margin = '';
+    return;
+  }
+
+  const vw = Math.min(window.innerWidth, document.documentElement.clientWidth);
+  // Chỉ scale khi màn hình nhỏ hơn thiết kế
+  const scale = Math.min(1, vw / DESIGN_LOBBY_WIDTH);
+
+  wrap.style.transform = `scale(${scale})`;
+  // Nếu scale nhỏ thì thêm khoảng trống phía dưới để không bị cắt (tùy lobby dài/ngắn)
+  wrap.style.margin = (scale < 1) ? '0 auto 24px auto' : '0 auto';
+}
+
+window.addEventListener('resize', applyLobbyScale);
+window.addEventListener('orientationchange', applyLobbyScale);
+document.addEventListener('DOMContentLoaded', applyLobbyScale);
+
+
+// ====== 2) START => FULLSCREEN + XOAY NGANG (nếu được) ======
+async function goLandscapeForGame(){
+  // Fullscreen thường là điều kiện để lock orientation hoạt động trên Android/Chrome
+  const root = document.documentElement;
+
+  // requestFullscreen cần user gesture (click Start)
+  if (root.requestFullscreen) {
+    try { await root.requestFullscreen(); } catch(e) {}
+  }
+
+  // Lock landscape (không phải máy nào cũng hỗ trợ)
+  if (screen.orientation && screen.orientation.lock) {
+    try {
+      await screen.orientation.lock('landscape');
+      document.body.classList.remove('show-rotate-hint');
+      return true;
+    } catch(e) {
+      // lock fail => fallback
+    }
+  }
+
+  // fallback: hiện hint xoay máy
+  document.body.classList.add('show-rotate-hint');
+  return false;
+}
+
+function restoreAfterGame(){
+  // Thoát fullscreen + unlock orientation (nếu có)
+  if (screen.orientation && screen.orientation.unlock) {
+    try { screen.orientation.unlock(); } catch(e) {}
+  }
+  if (document.fullscreenElement && document.exitFullscreen) {
+    try { document.exitFullscreen(); } catch(e) {}
+  }
+
+  document.body.classList.remove('show-rotate-hint');
+  inGame = false;
+  document.body.classList.remove('in-game');
+  applyLobbyScale(); // trả scale lobby về lại
+}
+
+// Nếu người chơi tự xoay thủ công sang ngang thì tắt hint
+function updateRotateHintByOrientation(){
+  // landscape => ẩn hint
+  const isLandscape = window.matchMedia && window.matchMedia("(orientation: landscape)").matches;
+  if (isLandscape) document.body.classList.remove('show-rotate-hint');
+}
+window.addEventListener('resize', updateRotateHintByOrientation);
+window.addEventListener('orientationchange', updateRotateHintByOrientation);
+
 </script>
 
 
@@ -3287,9 +3407,17 @@ function startGameLoop(update, render){
   </div>
 </div>
 <div id="scrollHandle">⇕</div>
+  <div id="rotateHint">
+  <div>
+    <div style="font-size:22px; font-weight:700; margin-bottom:10px;">Xoay ngang điện thoại</div>
+    <div>Game sẽ chơi tốt hơn ở chế độ Landscape.</div>
+  </div>
+</div>
+
 
 </body>
 </html>
+
 
 
 
