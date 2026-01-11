@@ -2,6 +2,31 @@
 <html lang="vi">
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <style>
+  html, body { margin:0; overflow-y:auto; overflow-x:hidden; }
+  #scrollHandle{
+    position: fixed;
+    right: 10px;
+    bottom: 90px;
+    width: 44px;
+    height: 120px;
+    z-index: 10000;
+    border-radius: 14px;
+    background: rgba(255,255,255,.10);
+    border: 1px solid rgba(255,255,255,.18);
+    backdrop-filter: blur(6px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-family: system-ui;
+    color: #fff;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none; /* handle tự xử lý kéo */
+  }
+  #scrollHandle.show{ display:flex; }
+</style>
+
 
 <style>
   html, body { height: 100%; margin: 0; background: #111; overflow: hidden; }
@@ -3208,6 +3233,50 @@ function startGameLoop(update, render){
   }
   loop();
 </script>
+<script>
+(function(){
+  const h = document.getElementById('scrollHandle');
+
+  function isMobile(){
+    return matchMedia('(pointer:coarse)').matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  }
+
+  // Hiện nút kéo khi mobile
+  if (isMobile()) h.classList.add('show');
+
+  let dragging = false;
+  let lastY = 0;
+
+  function onDown(e){
+    dragging = true;
+    lastY = e.clientY ?? (e.touches && e.touches[0] && e.touches[0].clientY) ?? 0;
+    e.preventDefault();
+  }
+  function onMove(e){
+    if (!dragging) return;
+    const y = e.clientY ?? (e.touches && e.touches[0] && e.touches[0].clientY) ?? lastY;
+    const dy = y - lastY;
+    lastY = y;
+    // Kéo xuống => scroll lên/xuống tương ứng
+    window.scrollBy(0, -dy * 1.2);
+    e.preventDefault();
+  }
+  function onUp(){
+    dragging = false;
+  }
+
+  // Pointer events (tốt nhất)
+  h.addEventListener('pointerdown', onDown);
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
+
+  // Fallback touch (một số máy)
+  h.addEventListener('touchstart', onDown, { passive:false });
+  window.addEventListener('touchmove', onMove, { passive:false });
+  window.addEventListener('touchend', onUp);
+})();
+</script>
 
 
 <div id="rotateHint">
@@ -3217,9 +3286,11 @@ function startGameLoop(update, render){
     <div class="hint">Bật <b>Auto-rotate</b> nếu cần.</div>
   </div>
 </div>
+<div id="scrollHandle">⇕</div>
 
 </body>
 </html>
+
 
 
 
