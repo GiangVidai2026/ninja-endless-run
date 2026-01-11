@@ -456,6 +456,38 @@ body {
   touch-action: pan-y;
 }
 html, body { overflow-y: auto !important; }
+/* ====== SCROLL CHỈ Ở LOBBY ====== */
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+/* MẶC ĐỊNH: cho phép scroll */
+body {
+  overflow-y: auto;
+  overflow-x: hidden;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Lobby được scroll */
+#overlay {
+  position: relative;
+  min-height: 100vh;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+/* ====== KHI VÀO GAME ====== */
+body.in-game {
+  overflow: hidden;          /* ❌ không scroll */
+  touch-action: none;        /* ❌ không gesture */
+}
+
+body.in-game canvas {
+  touch-action: none;        /* ❌ canvas không cho vuốt */
+}
 
 
   </style>
@@ -2263,6 +2295,7 @@ html, body { overflow-y: auto !important; }
 
   function showMenu(){
     G.state = STATE.MENU;
+      document.body.classList.remove("in-game");
     uiStatus.textContent = "MENU";
     overlay.classList.remove("hidden");
     overlay.classList.remove("over");
@@ -2316,13 +2349,14 @@ html, body { overflow-y: auto !important; }
     wood.active = false;
   }
 
-  function startGame(){
-    unlockAudio();
-    overlay.classList.add("hidden");
-    overlay.classList.remove("over");
-    resetRun();
-    G.state = STATE.PLAY;
-    uiStatus.textContent = "PLAY";
+ function startGame(){
+  document.body.classList.add("in-game"); // 👈 THÊM DÒNG NÀY
+  unlockAudio();
+  overlay.classList.add("hidden");
+  overlay.classList.remove("over");
+  resetRun();
+  G.state = STATE.PLAY;
+  uiStatus.textContent = "PLAY";
   }
 
   function togglePause(){
@@ -2343,6 +2377,7 @@ html, body { overflow-y: auto !important; }
     G.state = STATE.OVER;
     uiStatus.textContent = "OVER";
     setShake(CFG.shakeHit);
+  document.body.classList.remove("in-game"); // 👈 THÊM
 
     const s = Math.floor(G.score);
     if(s > G.best){
@@ -3446,6 +3481,7 @@ window.addEventListener('orientationchange', updateRotateHintByOrientation);
 
 </body>
 </html>
+
 
 
 
