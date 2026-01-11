@@ -1,6 +1,49 @@
 <!doctype html>
 <html lang="vi">
 <head>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+
+<style>
+  html, body { height: 100%; margin: 0; background: #111; overflow: hidden; }
+
+  /* Canvas full màn hình */
+  #game { display:block; width:100vw; height:100vh; touch-action:none; }
+
+  /* Overlay nhắc xoay */
+  .rotate-overlay{
+    position: fixed; inset: 0;
+    display: none;
+    align-items: center; justify-content: center;
+    background: rgba(0,0,0,.85);
+    color: #fff; z-index: 9999;
+    font: 16px/1.4 system-ui;
+    text-align: center;
+    padding: 24px;
+  }
+  .rotate-overlay.show{ display:flex; }
+
+  .rotate-btn{
+    margin-top: 12px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,.25);
+    background: rgba(255,255,255,.08);
+    color: #fff;
+    cursor: pointer;
+  }
+
+  /* (Tuỳ chọn) Nếu muốn “giả xoay” khi máy đang portrait */
+  body.portrait-rotate #game{
+    /* xoay canvas -90 độ và kéo về đúng vị trí */
+    transform: rotate(-90deg) translateX(-100vh);
+    transform-origin: top left;
+
+    /* Vì xoay nên kích thước hiển thị đổi chỗ */
+    width: 100vh;
+    height: 100vw;
+  }
+</style>
+
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <title>Ninja Endless Runner (Single File - Rebuild v4)</title>
@@ -422,6 +465,14 @@ button, .btn, .control-btn {
   <div id="gameShell">
   <div id="gameStage">
     <canvas id="game"></canvas>
+    <div id="rotateOverlay" class="rotate-overlay">
+  <div>
+    <div style="font-size:18px;font-weight:700;">Vui lòng xoay ngang để chơi</div>
+    <div style="opacity:.8;margin-top:6px;">(Landscape)</div>
+    <button id="rotateBtn" class="rotate-btn">Bật toàn màn hình</button>
+  </div>
+</div>
+
     <!-- các nút UI khác của bạn nếu có -->
   </div>
 
@@ -3069,6 +3120,95 @@ function startGameLoop(update, render){
 
 
 </script>
+  <script>
+  const canvas = document.getElementById('game');
+  const overlay = document.getElementById('rotateOverlay');
+  const rotateBtn = document.getElementById('rotateBtn');
+
+  // Nếu bạn đã có ctx/game loop thì giữ nguyên, chỉ lấy canvas là được:
+  const ctx = canvas.getContext('2d');
+
+  function isMobile(){
+    return matchMedia('(pointer:coarse)').matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  }
+  function isLandscape(){
+    return matchMedia('(orientation: landscape)').matches;
+  }
+
+  // Resize canvas theo “kích thước logic” mà game vẽ
+  function resizeCanvasForCurrentMode(){
+    const portrait = isMobile() && !isLandscape();
+
+    // Nếu bạn muốn “giả xoay” game khi portrait:
+    // - Canvas logic nên đặt theo landscape (w = chiều dài lớn hơn)
+    // - Khi portrait, innerWidth/innerHeight bị ngược với cái ta muốn
+    if (portrait) {
+      // logic: chiều rộng = innerHeight, chiều cao = innerWidth
+      canvas.width  = window.innerHeight;
+      canvas.height = window.innerWidth;
+    } else {
+      canvas.width  = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+  }
+
+  // Quyết định: hiện overlay hay tự “giả xoay”
+  function applyOrientationUI(){
+    if (!isMobile()){
+      overlay.classList.remove('show');
+      document.body.classList.remove('portrait-rotate');
+      resizeCanvasForCurrentMode();
+      return;
+    }
+
+    if (isLandscape()){
+      overlay.classList.remove('show');
+      document.body.classList.remove('portrait-rotate');
+    } else {
+      // CÁCH 2 phổ biến:
+      // A) Chỉ nhắc user xoay (overlay.show)
+      // overlay.classList.add('show');
+
+      // B) CrazyGames-style: vẫn chơi được portrait bằng cách xoay nội dung
+      overlay.classList.remove('show');              // không cần overlay
+      document.body.classList.add('portrait-rotate'); // xoay nội dung
+    }
+
+    resizeCanvasForCurrentMode();
+  }
+
+  window.addEventListener('resize', applyOrientationUI);
+  window.addEventListener('orientationchange', applyOrientationUI);
+  applyOrientationUI();
+
+  // Nút “Bật toàn màn hình” + thử lock landscape (chỉ 1 số máy/browser cho phép)
+  async function tryFullscreenAndLockLandscape(){
+    try{
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      }
+      if (screen.orientation && screen.orientation.lock) {
+        await screen.orientation.lock('landscape');
+      }
+    }catch(e){
+      console.log('Fullscreen/lock not available:', e);
+    }
+    applyOrientationUI();
+  }
+  rotateBtn.addEventListener('click', tryFullscreenAndLockLandscape);
+
+  /************* DEMO LOOP (nếu bạn đã có loop thì bỏ phần này) *************/
+  function loop(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = "#fff";
+    ctx.font = "20px system-ui";
+    ctx.fillText(`Canvas: ${canvas.width} x ${canvas.height}`, 20, 40);
+    ctx.fillText(`Landscape: ${isLandscape()}`, 20, 70);
+    requestAnimationFrame(loop);
+  }
+  loop();
+</script>
+
 
 <div id="rotateHint">
   <div class="box">
@@ -3080,6 +3220,7 @@ function startGameLoop(update, render){
 
 </body>
 </html>
+
 
 
 
