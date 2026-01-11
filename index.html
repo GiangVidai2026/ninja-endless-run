@@ -439,6 +439,23 @@ button, .btn, .control-btn {
 @media (min-width: 900px){
   .rotate-btn{ display:none; } /* desktop thì giấu */
 }
+html, body { height: 100%; margin: 0; }
+
+/* Cho phép kéo lên/xuống trên toàn trang */
+body {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch; /* iOS mượt */
+  touch-action: pan-y;               /* cho phép vuốt dọc */
+}
+
+/* Nếu bạn có container sảnh chờ, ưu tiên cho nó scroll */
+#lobby {
+  min-height: 100vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+html, body { overflow-y: auto !important; }
 
 
   </style>
@@ -3289,33 +3306,45 @@ function startGameLoop(update, render){
   let lastY = 0;
 
   function onDown(e){
-    dragging = true;
-    lastY = e.clientY ?? (e.touches && e.touches[0] && e.touches[0].clientY) ?? 0;
-    e.preventDefault();
-  }
-  function onMove(e){
-    if (!dragging) return;
-    const y = e.clientY ?? (e.touches && e.touches[0] && e.touches[0].clientY) ?? lastY;
-    const dy = y - lastY;
-    lastY = y;
-    // Kéo xuống => scroll lên/xuống tương ứng
-    window.scrollBy(0, -dy * 1.2);
-    e.preventDefault();
-  }
-  function onUp(){
-    dragging = false;
-  }
+  // Nếu đang ở lobby => để kéo trang bình thường
+  if (!inGame) return;
 
-  // Pointer events (tốt nhất)
-  h.addEventListener('pointerdown', onDown);
-  window.addEventListener('pointermove', onMove);
-  window.addEventListener('pointerup', onUp);
-  window.addEventListener('pointercancel', onUp);
+  dragging = true;
+  lastY = e.clientY ?? (e.touches && e.touches[0] && e.touches[0].clientY) ?? 0;
 
-  // Fallback touch (một số máy)
-  h.addEventListener('touchstart', onDown, { passive:false });
-  window.addEventListener('touchmove', onMove, { passive:false });
-  window.addEventListener('touchend', onUp);
+  if (e.cancelable) e.preventDefault();
+}
+
+function onMove(e){
+  if (!dragging) return;
+
+  // Lobby: không can thiệp
+  if (!inGame) return;
+
+  const y = e.clientY ?? (e.touches && e.touches[0] && e.touches[0].clientY) ?? lastY;
+  const dy = y - lastY;
+  lastY = y;
+
+  // Nếu trong game bạn muốn dùng kéo để scroll (thường không cần) thì giữ,
+  // còn không thì bạn có thể xóa 2 dòng này.
+  window.scrollBy(0, -dy * 1.2);
+
+  if (e.cancelable) e.preventDefault();
+}
+
+function onUp(){
+  dragging = false;
+}
+// Pointer events
+h.addEventListener('pointerdown', onDown);
+h.addEventListener('pointermove', onMove);
+window.addEventListener('pointerup', onUp);
+window.addEventListener('pointercancel', onUp);
+
+// Fallback touch
+h.addEventListener('touchstart', onDown, { passive:false });
+h.addEventListener('touchmove', onMove, { passive:false });
+window.addEventListener('touchend', onUp);
 })();
   // ====== 1) THU NHỎ LOBBY CHO ĐIỆN THOẠI NHỎ ======
 const DESIGN_LOBBY_WIDTH = 420;  // bạn có thể chỉnh (rộng thiết kế lobby của bạn)
@@ -3417,6 +3446,7 @@ window.addEventListener('orientationchange', updateRotateHintByOrientation);
 
 </body>
 </html>
+
 
 
 
